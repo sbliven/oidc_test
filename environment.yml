@@ -1,0 +1,14 @@
+packages:
+- python==3.11
+- click
+- tornado
+
+- black
+- flake8
+- isort
+- mypy
+
+- pip
+- pip:
+  - oic>=1.5
+  - click-logging
