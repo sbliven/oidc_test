@@ -45,3 +45,14 @@ Requesting access token
 Hello, Spencer Bliven <spencer.bliven@psi.ch>
 [I 230209 20:52:43 web:2271] 200 GET /auth?state=HE5d4n0d1XQK0EFJ&session_state=REDACTED (127.0.0.1) 297.69ms
 ```
+
+## Installation
+
+To install all dependencies with conda or mamba:
+
+    conda env create -f environment.yml
+
+There is also an `environment_dev.yml` file with includes some recommended linters for developing.
+
+Alternatively, install dependencies listed in the the above file manually with pip.
+
