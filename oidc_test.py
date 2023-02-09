@@ -1,20 +1,22 @@
 #!/usr/bin/env python
 import asyncio
 import logging
+import sys
+import webbrowser
 
 import click
 import click_logging
 import tornado.web
-from oic.oic import Client
-from oic.oic.message import ProviderConfigurationResponse
-from oic.utils.authn.client import CLIENT_AUTHN_METHOD
-from tornado.httpclient import HTTPClient
-from tornado.log import enable_pretty_logging
-from oic.oic.message import RegistrationResponse
 from oic import rndstr
-from oic.utils.http_util import Redirect
-import webbrowser
-from oic.oic.message import AuthorizationResponse, AccessTokenResponse, OpenIDSchema
+from oic.oic import Client
+from oic.oic.message import (
+    AccessTokenResponse,
+    AuthorizationResponse,
+    OpenIDSchema,
+    RegistrationResponse,
+)
+from oic.utils.authn.client import CLIENT_AUTHN_METHOD
+from tornado.log import enable_pretty_logging
 
 access_log = logging.getLogger("tornado.access")
 enable_pretty_logging()
@@ -28,32 +30,41 @@ shutdown_event = asyncio.Event()
 
 @click.command()
 @click_logging.simple_verbosity_option(logger)
-@click.option("--client_id", help="OIDC client ID", required=True, envvar="OIDC_CLIENT_ID")
 @click.option(
-    "--client_secret", help="OIDC client secret", required=True, envvar="OIDC_CLIENT_SECRET"
+    "--client_id", help="OIDC client ID", required=True, envvar="OIDC_CLIENT_ID"
+)
+@click.option(
+    "--client_secret",
+    help="OIDC client secret",
+    required=True,
+    envvar="OIDC_CLIENT_SECRET",
 )
 @click.option(
     "--port",
     default=18546,
     help="Port for OIDC communication. Must match the registered redirect_uri.",
-    envvar="OIDC_PORT"
+    envvar="OIDC_PORT",
 )
 @click.option(
     "--issuer",
-    help="OpenID provider. Should be the base url for a .well-known/openid-configuration file",
+    help="OpenID provider. Should be the base url for a "
+    ".well-known/openid-configuration file",
     default="https://morgana-kc.psi.ch/auth/realms/master",
-    envvar="OIDC_ISSUER"
+    envvar="OIDC_ISSUER",
 )
 def main(client_id, client_secret, port, issuer):
     """Run an OpenID Connect authentication code flow from the command line"""
     logger.info("###  OIDC TEST ###")
 
     asyncio.run(async_main(client_id, client_secret, port, issuer))
+
+
 async def async_main(client_id, client_secret, port, issuer):
     await asyncio.gather(
         web_server(port),
         authorization_code_flow(port, issuer, client_id, client_secret),
     )
+
 
 async def authorization_code_flow(port, issuer, client_id, client_secret):
     "Start a new OIDC authorization code flow"
@@ -119,23 +130,8 @@ def make_app():
     return tornado.web.Application(
         [
             (r"/auth", AuthHandler),
-            (r".*", MainHandler),
         ]
     )
-
-
-class MainHandler(tornado.web.RequestHandler):
-    "A default handler to log requests for debugging"
-
-    def get(self):
-        logger.info(f"GET {self.request.path}")
-        self.set_status(404)
-        self.write(f"Error {self.request.uri} not found")
-
-    def put(self):
-        logger.info(f"PUT {self.request.path}")
-        self.set_status(404)
-        self.write(f"Error {self.request.uri} not found")
 
 
 class AuthHandler(tornado.web.RequestHandler):
@@ -165,7 +161,7 @@ class AuthHandler(tornado.web.RequestHandler):
         if aresp["state"] != session["state"]:
             logger.error("State didn't match!")
             sys.exit(1)
-        code = aresp["code"]
+        assert "code" in aresp
         logger.info("Got authorization code.")
 
         # Request access token
@@ -192,11 +188,12 @@ def request_token(aresp):
 
     logged_in(userinfo)
 
+
 def logged_in(userinfo):
     "Authentication is concluded"
-    logger.info(
-        f"Hello, {userinfo.get('name', 'Unknown')} <{userinfo.get('email','unknown@email')}>"
-    )
+    name = userinfo.get("name", "Unknown")
+    email = userinfo.get("email", "unknown@email")
+    logger.info(f"Hello, {name} <{email}>")
 
     shutdown_event.set()
 
