@@ -35,7 +35,7 @@ shutdown_event = asyncio.Event()
 )
 @click.option(
     "--client_secret",
-    help="OIDC client secret",
+    help="OIDC client secret. May be 'PKCE' for public access clients",
     required=True,
     envvar="OIDC_CLIENT_SECRET",
 )
@@ -60,17 +60,19 @@ def main(client_id, client_secret, port, issuer):
 
 
 async def async_main(client_id, client_secret, port, issuer):
-    await asyncio.gather(
-        web_server(port),
-        authorization_code_flow(port, issuer, client_id, client_secret),
-    )
+    tasks = [web_server(port)]
+    if client_secret.lower() == "pkce":
+        tasks.append(authorization_code_flow_pkce(port, issuer, client_id))
+    else:
+        tasks.append(authorization_code_flow(port, issuer, client_id, client_secret))
+    await asyncio.gather(*tasks)
 
 
 async def authorization_code_flow(port, issuer, client_id, client_secret):
     "Start a new OIDC authorization code flow"
     global client
     # Configure endpoints
-    logger.info(f"Configuring OpenId provider from {issuer}")
+    logger.info(f"Configuring OpenId provider from {issuer} for authorization code flow")
     client = Client(client_authn_method=CLIENT_AUTHN_METHOD)
     client.provider_config(issuer)
 
@@ -113,6 +115,28 @@ def authenticate(client):
     logger.info(f"Opening browser for authorization: {login_url}")
     webbrowser.open(login_url, new=2)
     return session
+
+
+async def authorization_code_flow_pkce(port, issuer, client_id):
+    "Start a new OIDC authorization code flow"
+    global client
+    # Configure endpoints
+    logger.info(f"Configuring OpenId provider from {issuer} for authorization code flow with PKCE")
+    client = Client(client_authn_method=CLIENT_AUTHN_METHOD, config={"code_challenge": {"method": "S256", "length": 64}})
+    client.provider_config(issuer)
+
+    # Register client
+    info = {
+        "client_id": client_id,
+        "redirect_uris": [f"http://0.0.0.0:{port}/auth"],
+    }
+    client_reg = RegistrationResponse(**info)
+    client.store_registration_info(client_reg)
+
+    # Make Authentication request
+    authenticate(client)
+
+    logger.info("Waiting for authentication")
 
 
 async def web_server(port):

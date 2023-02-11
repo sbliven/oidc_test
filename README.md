@@ -2,10 +2,25 @@
 
 This is a demo app for the OIDC authentication code flow in a command line tool.
 
-The tool constructs the authentication request and redirects the user's browser
+The tool constructs the authentication flow and redirects the user's browser
 to the single sign-on page. It starts a tornado webserver to handle the OIDC
 redirect. After the callback arrives it requests an access token and basic user
 info.
+
+Supported flows:
+- authentication code flow (confidential clients)
+- authentication code flow with PKCE (public clients)
+
+## Installation
+
+To install all dependencies with conda or mamba:
+
+    conda env create -f environment.yml
+
+There is also an `environment_dev.yml` file with includes some recommended linters for developing.
+
+Alternatively, install dependencies listed in the the above file manually with pip.
+
 
 ## Client setup
 
@@ -30,6 +45,8 @@ For instance,
 
     python oidc_test.py
 
+Public access clients should specify 'PKCE' for the client secret.
+
 ## Example output
 
 ```
@@ -45,14 +62,3 @@ Requesting access token
 Hello, Spencer Bliven <spencer.bliven@psi.ch>
 [I 230209 20:52:43 web:2271] 200 GET /auth?state=HE5d4n0d1XQK0EFJ&session_state=REDACTED (127.0.0.1) 297.69ms
 ```
-
-## Installation
-
-To install all dependencies with conda or mamba:
-
-    conda env create -f environment.yml
-
-There is also an `environment_dev.yml` file with includes some recommended linters for developing.
-
-Alternatively, install dependencies listed in the the above file manually with pip.
-
