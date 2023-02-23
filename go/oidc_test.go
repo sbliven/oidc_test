@@ -4,15 +4,23 @@ import (
     "context"
     "fmt"
     "net/http"
+    "os"
 
     "github.com/coreos/go-oidc/v3/oidc"
     "golang.org/x/oauth2"
 )
 
 func main() {
+    // Get the client ID and client secret from environment variables
+    clientID := os.Getenv("OIDC_CLIENT_ID")
+    clientSecret := os.Getenv("OIDC_CLIENT_SECRET")
+
+    if clientID == "" || clientSecret == "" {
+        fmt.Println("OIDC_CLIENT_ID and/or OIDC_CLIENT_SECRET environment variables not set")
+        return
+    }
+
     // Replace these with your actual values
-    clientID := "your-client-id"
-    clientSecret := "your-client-secret"
     redirectURI := "http://localhost:8080/callback"
     issuerURL := "https://accounts.google.com"
 
