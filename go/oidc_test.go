@@ -21,8 +21,8 @@ func main() {
     }
 
     // Replace these with your actual values
-    redirectURI := "http://localhost:8080/callback"
-    issuerURL := "https://accounts.google.com"
+    redirectURI := "http://localhost:18546/callback"
+    issuerURL := "https://morgana-kc.psi.ch/auth/realms/master"
 
     // Create a new OIDC verifier using the issuer URL
     ctx := context.Background()
