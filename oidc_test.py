@@ -80,7 +80,7 @@ async def authorization_code_flow(port, issuer, client_id, client_secret):
     info = {
         "client_id": client_id,
         "client_secret": client_secret,
-        "redirect_uris": [f"http://0.0.0.0:{port}/auth"],
+        "redirect_uris": [f"http://localhost:{port}/auth"],
     }
     client_reg = RegistrationResponse(**info)
     client.store_registration_info(client_reg)
@@ -128,7 +128,7 @@ async def authorization_code_flow_pkce(port, issuer, client_id):
     # Register client
     info = {
         "client_id": client_id,
-        "redirect_uris": [f"http://0.0.0.0:{port}/auth"],
+        "redirect_uris": [f"http://localhost:{port}/auth"],
     }
     client_reg = RegistrationResponse(**info)
     client.store_registration_info(client_reg)
