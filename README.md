@@ -29,7 +29,7 @@ The client should be registered out-of-band. You will need the following informa
 - The issuer. This should be an https url, and there should be a valid
   configuration file at {issuer}/.well-known/openid-configuration
 - Client ID
-- Client Secret
+- Client Secret (or PKCE)
 
 The redirect URL must be registered with the issuer as http://0.0.0.0:18546/auth
 (port can be customized if needed).

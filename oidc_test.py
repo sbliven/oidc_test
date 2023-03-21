@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 import asyncio
+import hashlib
 import logging
+import random
 import sys
 import webbrowser
 
@@ -19,7 +21,6 @@ from oic.oic.message import (
 )
 from oic.utils.authn.client import CLIENT_AUTHN_METHOD
 from tornado.log import enable_pretty_logging
-
 
 access_log = logging.getLogger("tornado.access")
 enable_pretty_logging()
@@ -77,6 +78,7 @@ def main(client_id, client_secret, port, issuer, scopes):
 
 async def async_main(client_id, client_secret, port, issuer, scopes=[]):
     tasks = [web_server(port)]
+    # tasks.append(timeout())  # exit app after timeout
     if client_secret.lower() == "pkce":
         tasks.append(authorization_code_flow_pkce(port, issuer, client_id, scopes))
     else:
@@ -84,6 +86,14 @@ async def async_main(client_id, client_secret, port, issuer, scopes=[]):
             authorization_code_flow(port, issuer, client_id, client_secret, scopes)
         )
     await asyncio.gather(*tasks)
+
+
+async def timeout(timeout=5 * 60):
+    "Exit the app"
+    await asyncio.sleep(timeout)
+    logger.error("Authentication timed out")
+    shutdown_event.set()
+    sys.exit(1)
 
 
 async def authorization_code_flow(port, issuer, client_id, client_secret, scopes=[]):
@@ -120,6 +130,7 @@ def authenticate(client, scopes=[]):
     session = {}
     session["state"] = rndstr()
     session["nonce"] = rndstr()
+
     args = {
         "client_id": client.client_id,
         "response_type": "code",
@@ -128,6 +139,9 @@ def authenticate(client, scopes=[]):
         "redirect_uri": client.registration_response["redirect_uris"][0],
         "state": session["state"],
     }
+    code_challenge, code_verifier = client.add_code_challenge()
+    session["code_verifier"] = code_verifier
+    args.update(code_challenge)
 
     auth_req = client.construct_AuthorizationRequest(request_args=args)
     login_url = auth_req.request(client.authorization_endpoint)
@@ -147,7 +161,7 @@ async def authorization_code_flow_pkce(port, issuer, client_id, scopes=[]):
     )
     client = Client(
         client_authn_method=CLIENT_AUTHN_METHOD,
-        config={"code_challenge": {"method": "S256", "length": 64}},
+        config={"code_challenge": {"method": "S256", "length": 128}},
     )
     client.provider_config(issuer)
 
@@ -186,6 +200,7 @@ def make_app():
 
 class AuthHandler(tornado.web.RequestHandler):
     "Handle redirects from the OP after the authentication request"
+
     def _auth_error(self, error, code=500):
         self.set_status(code)
         self.write(
@@ -241,6 +256,9 @@ def request_token(aresp):
     args = {
         "code": aresp["code"],
     }
+    if "code_verifier" in session:
+        args["code_verifier"] = session["code_verifier"]
+
     resp = client.do_access_token_request(
         state=aresp["state"], request_args=args, authn_method="client_secret_basic"
     )
