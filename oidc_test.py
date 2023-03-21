@@ -7,16 +7,19 @@ import webbrowser
 import click
 import click_logging
 import tornado.web
+import yaml
 from oic import rndstr
 from oic.oic import Client
 from oic.oic.message import (
     AccessTokenResponse,
+    AddressClaim,
     AuthorizationResponse,
     OpenIDSchema,
     RegistrationResponse,
 )
 from oic.utils.authn.client import CLIENT_AUTHN_METHOD
 from tornado.log import enable_pretty_logging
+
 
 access_log = logging.getLogger("tornado.access")
 enable_pretty_logging()
@@ -26,6 +29,13 @@ click_logging.basic_config(logger)
 session = None  # single global session
 client = None  # global client
 shutdown_event = asyncio.Event()
+
+
+def dict_representor(dumper, data):
+    return dumper.represent(data.to_dict())
+
+
+yaml.add_representer(AddressClaim, dict_representor)
 
 
 @click.command()
@@ -52,27 +62,37 @@ shutdown_event = asyncio.Event()
     default="https://morgana-kc.psi.ch/auth/realms/master",
     envvar="OIDC_ISSUER",
 )
-def main(client_id, client_secret, port, issuer):
+@click.option(
+    "--scopes",
+    help="Extra scopes to request (comma separated)",
+    default="",
+    envvar="OIDC_SCOPES",
+)
+def main(client_id, client_secret, port, issuer, scopes):
     """Run an OpenID Connect authentication code flow from the command line"""
     logger.info("###  OIDC TEST ###")
 
-    asyncio.run(async_main(client_id, client_secret, port, issuer))
+    asyncio.run(async_main(client_id, client_secret, port, issuer, scopes.split(",")))
 
 
-async def async_main(client_id, client_secret, port, issuer):
+async def async_main(client_id, client_secret, port, issuer, scopes=[]):
     tasks = [web_server(port)]
     if client_secret.lower() == "pkce":
-        tasks.append(authorization_code_flow_pkce(port, issuer, client_id))
+        tasks.append(authorization_code_flow_pkce(port, issuer, client_id, scopes))
     else:
-        tasks.append(authorization_code_flow(port, issuer, client_id, client_secret))
+        tasks.append(
+            authorization_code_flow(port, issuer, client_id, client_secret, scopes)
+        )
     await asyncio.gather(*tasks)
 
 
-async def authorization_code_flow(port, issuer, client_id, client_secret):
+async def authorization_code_flow(port, issuer, client_id, client_secret, scopes=[]):
     "Start a new OIDC authorization code flow"
     global client
     # Configure endpoints
-    logger.info(f"Configuring OpenId provider from {issuer} for authorization code flow")
+    logger.info(
+        f"Configuring OpenId provider from {issuer} for authorization code flow"
+    )
     client = Client(client_authn_method=CLIENT_AUTHN_METHOD)
     client.provider_config(issuer)
 
@@ -86,12 +106,12 @@ async def authorization_code_flow(port, issuer, client_id, client_secret):
     client.store_registration_info(client_reg)
 
     # Make Authentication request
-    authenticate(client)
+    authenticate(client, scopes)
 
     logger.info("Waiting for authentication")
 
 
-def authenticate(client):
+def authenticate(client, scopes=[]):
     "Makes an authentication request"
     global session
     if session is not None:
@@ -103,7 +123,7 @@ def authenticate(client):
     args = {
         "client_id": client.client_id,
         "response_type": "code",
-        "scope": ["openid"],
+        "scope": " ".join(["openid"] + scopes),
         "nonce": session["nonce"],
         "redirect_uri": client.registration_response["redirect_uris"][0],
         "state": session["state"],
@@ -117,12 +137,18 @@ def authenticate(client):
     return session
 
 
-async def authorization_code_flow_pkce(port, issuer, client_id):
+async def authorization_code_flow_pkce(port, issuer, client_id, scopes=[]):
     "Start a new OIDC authorization code flow"
     global client
     # Configure endpoints
-    logger.info(f"Configuring OpenId provider from {issuer} for authorization code flow with PKCE")
-    client = Client(client_authn_method=CLIENT_AUTHN_METHOD, config={"code_challenge": {"method": "S256", "length": 64}})
+    logger.info(
+        f"Configuring OpenId provider from {issuer} "
+        f"for authorization code flow with PKCE"
+    )
+    client = Client(
+        client_authn_method=CLIENT_AUTHN_METHOD,
+        config={"code_challenge": {"method": "S256", "length": 64}},
+    )
     client.provider_config(issuer)
 
     # Register client
@@ -134,7 +160,7 @@ async def authorization_code_flow_pkce(port, issuer, client_id):
     client.store_registration_info(client_reg)
 
     # Make Authentication request
-    authenticate(client)
+    authenticate(client, scopes)
 
     logger.info("Waiting for authentication")
 
@@ -218,7 +244,7 @@ def logged_in(userinfo):
     name = userinfo.get("name", "Unknown")
     email = userinfo.get("email", "unknown@email")
     logger.info(f"Hello, {name} <{email}>")
-
+    logger.info(yaml.safe_dump({"Known claims": userinfo.to_dict()}))
     shutdown_event.set()
 
 
