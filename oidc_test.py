@@ -186,36 +186,53 @@ def make_app():
 
 class AuthHandler(tornado.web.RequestHandler):
     "Handle redirects from the OP after the authentication request"
-
-    def get(self):
-        logger.info(f"GET {self.request.path}")
-        # Respond to user
-        self.set_status(200)
+    def _auth_error(self, error, code=500):
+        self.set_status(code)
         self.write(
-            """<!DOCTYPE html>
-                   <html><head><title>Authorization successful</title></head>
-                   <body><h1>Authorization Successful</h1>
-                   <p>You may close this window.</p>
-                   </body></html>
-                   """
+            f"""<!DOCTYPE html>
+                <html><head><title>Authorization failed</title></head>
+                <body><h1>Authorization failed</h1>
+                <pre>{error}</pre>
+                </body></html>
+                """
         )
         self.flush()
 
-        # Parse response for code
-        aresp = client.parse_response(
-            AuthorizationResponse, info=self.request.query, sformat="urlencoded"
-        )
-        if not isinstance(aresp, AuthorizationResponse):
-            logger.error(f"Error getting code: {aresp}")
-            sys.exit(1)
-        if aresp["state"] != session["state"]:
-            logger.error("State didn't match!")
-            sys.exit(1)
-        assert "code" in aresp
-        logger.info("Got authorization code.")
+    def get(self):
+        logger.info(f"GET {self.request.path}")
 
-        # Request access token
-        request_token(aresp)
+        try:
+            # Parse response for code
+            aresp = client.parse_response(
+                AuthorizationResponse, info=self.request.query, sformat="urlencoded"
+            )
+            if not isinstance(aresp, AuthorizationResponse):
+                logger.error(f"Error getting code: {aresp}")
+                self._auth_error(f"Error getting code: {aresp}", 401)
+                sys.exit(1)
+            if aresp["state"] != session["state"]:
+                logger.error("State didn't match!")
+                self._auth_error("State didn't match!", 500)
+                sys.exit(1)
+            assert "code" in aresp
+            logger.info("Got authorization code.")
+
+            # Request access token
+            request_token(aresp)
+
+            # Respond to user
+            self.set_status(200)
+            self.write(
+                """<!DOCTYPE html>
+                    <html><head><title>Authorization successful</title></head>
+                    <body><h1>Authorization Successful</h1>
+                    <p>You may close this window.</p>
+                    </body></html>
+                    """
+            )
+            self.flush()
+        except Exception as ex:
+            self._auth_error(ex)
 
 
 # TODO Should this be a coroutine?
