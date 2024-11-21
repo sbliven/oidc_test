@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,7 +16,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func open(url string) error {
+func openBrowser(url string) error {
 	// Open url in a browser
 	var cmd string
 	var args []string
@@ -52,16 +51,12 @@ func generateRandomString(length int) (string, error) {
 	return str, nil
 }
 
-func authorization_code_flow(issuerURL string, clientID string, clientSecret string, redirectURI string) (oauth2.Config, error) {
-	// Create a new OIDC verifier using the issuer URL
-	ctx := context.Background()
-	fmt.Printf("Configuring OpenId provider from %v for authorization code flow\n", issuerURL)
+func setupOAuth2Config(ctx context.Context, clientID, clientSecret, issuerURL, redirectURI string) (*oidc.Provider, oauth2.Config, error) {
 	provider, err := oidc.NewProvider(ctx, issuerURL)
 	if err != nil {
-		panic(errors.New(fmt.Sprintf("Failed to create OIDC provider: %v", err)))
+		return nil, oauth2.Config{}, fmt.Errorf("failed to create OIDC provider: %v", err)
 	}
 
-	// Create a new OAuth2 config using the client ID, client secret, and redirect URI
 	oauth2Config := oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
@@ -70,51 +65,47 @@ func authorization_code_flow(issuerURL string, clientID string, clientSecret str
 		Scopes:       []string{oidc.ScopeOpenID},
 	}
 
-	return oauth2Config, nil
+	return provider, oauth2Config, nil
 }
-func web_server(port int) error {
-	// Create a new HTTP handler that handles the OAuth2 callback and exchanges the authorization code for an access token
-	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
-		code := r.URL.Query().Get("code")
+
+func handleCallback(ctx context.Context, provider *oidc.Provider, oauth2Config oauth2.Config, clientID string, shutdown chan struct{}) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		fmt.Printf("Got Callback: %s %s\n", request.Method, request.URL)
+
+		code := request.URL.Query().Get("code")
 		token, err := oauth2Config.Exchange(ctx, code)
 		if err != nil {
 			fmt.Printf("Failed to exchange OAuth2 code for token: %v\n", err)
 			return
 		}
 
-		// Create a new ID token verifier using the OIDC provider
 		verifier := provider.Verifier(&oidc.Config{ClientID: clientID})
-
-		// Verify the ID token in the access token
 		idToken, err := verifier.Verify(ctx, token.Extra("id_token").(string))
 		if err != nil {
 			fmt.Printf("Failed to verify ID token: %v\n", err)
 			return
+		} else {
+			fmt.Printf("Verified ID token successfully\n")
 		}
 
-		// Get the user's email address from the ID token claims
 		claims := map[string]interface{}{}
 		if err := idToken.Claims(&claims); err != nil {
 			fmt.Printf("Failed to get ID token claims: %v\n", err)
 			return
 		}
-		name, ok := claims["preferred_username"].(string)
-		if !ok {
-			fmt.Println("preferred_username claim not found or has wrong type")
-			return
+
+		fmt.Printf("ID Token Claims:\n")
+		for k, v := range claims {
+			fmt.Printf("%s: %v\n", k, v)
 		}
 
-		// Print the user's info
-		fmt.Printf("Username: %v\n", name)
+		fmt.Fprint(response, "<!DOCTYPE html><html><head><title>Authorization successful</title></head>"+
+			"<body><h1>Authorization Successful</h1><p>You may close this window.</p></body></html>")
 
-		html := "<!DOCTYPE html>" +
-			"<html><head><title>Authorization successful</title></head>" +
-			"<body><h1>Authorization Successful</h1>" +
-			"<p>You may close this window.</p>" +
-			"</body></html>"
-		fmt.Fprint(w, html)
-	})
+		go func() { shutdown <- struct{}{} }()
+	}
 }
+
 func main() {
 	// Get the client ID and client secret from environment variables
 	clientID := os.Getenv("OIDC_CLIENT_ID")
@@ -136,17 +127,34 @@ func main() {
 
 	redirectURI := fmt.Sprintf("http://localhost:%d/auth", port)
 
-	go authorization_code_flow(issuerURL, clientID, clientSecret)
+	ctx := context.Background()
+	provider, oauth2Config, err := setupOAuth2Config(ctx, clientID, clientSecret, issuerURL, redirectURI)
+	if err != nil {
+		panic(err)
+	}
 
-	// Authenticate user
 	url := oauth2Config.AuthCodeURL("state")
 	fmt.Printf("Opening browser for authorization: %v\n", url)
-	go open(url)
+	go openBrowser(url)
+
+	server := &http.Server{Addr: fmt.Sprintf(":%v", port)}
+	shutdown := make(chan struct{})
+
+	http.HandleFunc("/auth", handleCallback(ctx, provider, oauth2Config, clientID, shutdown))
 
 	// Start the HTTP server
-	fmt.Printf("Listening on http://localhost:%v\n", port)
-	if err := http.ListenAndServe(fmt.Sprintf(":%v", port), nil); err != nil {
-		fmt.Printf("Failed to start HTTP server: %v\n", err)
+	go func() {
+		fmt.Printf("Listening on http://localhost:%v\n", port)
+		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+			fmt.Printf("Error with webserver: %v\n", err)
+		}
+	}()
+
+	<-shutdown
+
+	// Shutdown the server
+	if err := server.Shutdown(context.Background()); err != nil {
+		fmt.Printf("Error during server shutdown: %v\n", err)
 	}
 
 }
