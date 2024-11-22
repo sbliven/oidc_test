@@ -141,6 +141,7 @@ func handleCallback(ctx context.Context, provider *oidc.Provider, oauth2Config o
 		)
 		if err != nil {
 			fmt.Printf("❌ Failed to exchange OAuth2 code for token: %v\n", err)
+			go func() { shutdown <- struct{}{} }()
 			return
 		}
 
@@ -150,6 +151,7 @@ func handleCallback(ctx context.Context, provider *oidc.Provider, oauth2Config o
 		rawIDToken, ok := oauthToken.Extra("id_token").(string)
 		if !ok {
 			fmt.Print("❌ OAuth2 Access Token misses the OIDC id_token")
+			go func() { shutdown <- struct{}{} }()
 			return
 		}
 		fmt.Printf("❗️ OIDC ID Token: %v\n", rawIDToken)
@@ -159,6 +161,7 @@ func handleCallback(ctx context.Context, provider *oidc.Provider, oauth2Config o
 		idToken, err := verifier.Verify(ctx, rawIDToken)
 		if err != nil {
 			fmt.Printf("❌ Failed to verify OIDC token: %v\n", err)
+			go func() { shutdown <- struct{}{} }()
 			return
 		} else {
 			fmt.Printf("✅ Verified OIDC id token successfully\n")
@@ -167,6 +170,7 @@ func handleCallback(ctx context.Context, provider *oidc.Provider, oauth2Config o
 		claims := map[string]interface{}{}
 		if err := idToken.Claims(&claims); err != nil {
 			fmt.Printf("❌Failed to get ID token claims: %v\n", err)
+			go func() { shutdown <- struct{}{} }()
 			return
 		}
 
